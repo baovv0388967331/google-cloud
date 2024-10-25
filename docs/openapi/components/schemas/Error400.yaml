@@ -1,0 +1,8 @@
+type: object
+properties:
+  message:
+    type: string
+    example: "INVALID_ARGUMENT:API key not valid. Please pass a valid API key"
+  code:
+    type: number
+    example: 400

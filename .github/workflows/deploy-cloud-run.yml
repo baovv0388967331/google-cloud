@@ -1,0 +1,117 @@
+name: Deploy Express App to Cloud Run
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    name: Deploy to GCP
+    runs-on: ubuntu-latest
+
+    env:
+      PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+      SERVICE_ACCOUNT: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+      IMAGE_NAME: example-app
+      NODE_ENV: emulator
+      CLOUD_RUN_PORT: port
+
+    permissions:
+      contents: read
+      id-token: write
+      pages: write
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+          
+      - name: Set Up Environment Variables
+        run: |
+          ENV_VARS="NODE_ENV=$NODE_ENV,CLOUD_RUN_PORT=$CLOUD_RUN_PORT"
+
+      - name: Install Firebase CLI
+        run: |
+          npm install -g firebase-tools
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v1.1.1
+        with:
+          credentials_json: "${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}"
+
+      - name: Configure Docker
+        run: |
+          gcloud auth configure-docker asia-northeast1-docker.pkg.dev --quiet
+
+      - name: Build Docker Image
+        run: |
+          docker build --platform linux/amd64 -t $IMAGE_NAME:latest batches/.
+
+      - name: Push Docker Image to Artifact Registry
+        run: |-
+          docker tag $IMAGE_NAME:latest asia-northeast1-docker.pkg.dev/$PROJECT_ID/example-images/$IMAGE_NAME:latest
+          docker push asia-northeast1-docker.pkg.dev/$PROJECT_ID/example-images/$IMAGE_NAME:latest
+
+      - name: Deploy Function One To Cloud Run Job
+        run: |
+          gcloud beta run jobs deploy function-one \
+            --image asia-northeast1-docker.pkg.dev/$PROJECT_ID/example-images/$IMAGE_NAME:latest \
+            --region asia-northeast1 \
+            --tasks=1 \
+            --task-timeout=1d \
+            --service-account=$SERVICE_ACCOUNT \
+            --set-env-vars FUNCTION_NAME=functionOne,$ENV_VARS \
+            --quiet
+
+      - name: Deploy Function Two To Cloud Run Job
+        run: |
+          gcloud beta run jobs deploy function-two \
+            --image asia-northeast1-docker.pkg.dev/$PROJECT_ID/example-images/$IMAGE_NAME:latest \
+            --region asia-northeast1 \
+            --tasks=1 \
+            --task-timeout=1d \
+            --service-account=$SERVICE_ACCOUNT \
+            --set-env-vars FUNCTION_NAME=functionTwo,$ENV_VARS \
+            --quiet
+
+      - name: Delete Scheduler for Function One
+        run: |
+          if gcloud scheduler jobs describe function-one-schedule --location=asia-northeast1 > /dev/null 2>&1; then
+            gcloud scheduler jobs pause function-one-schedule --location=asia-northeast1
+            gcloud scheduler jobs delete function-one-schedule --location=asia-northeast1 --quiet
+          fi
+
+      - name: Delete Scheduler for Function Two
+        run: |
+          if gcloud scheduler jobs describe function-two-schedule --location=asia-northeast1 > /dev/null 2>&1; then
+            gcloud scheduler jobs pause function-two-schedule --location=asia-northeast1
+            gcloud scheduler jobs delete function-two-schedule --location=asia-northeast1 --quiet
+          fi
+         
+      - name: Create Cloud Scheduler for function-one
+        run: |
+          gcloud scheduler jobs create http function-one-schedule \
+            --location=asia-northeast1 \
+            --schedule="0 8 * * *" \
+            --time-zone="Asia/Tokyo" \
+            --http-method=POST \
+            --uri=https://asia-northeast1-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/$PROJECT_ID/jobs/function-one:run \
+            --oauth-service-account-email=$SERVICE_ACCOUNT
+      
+      - name: Create Cloud Scheduler for function-two
+        run: |
+          gcloud scheduler jobs create http function-two-schedule \
+            --location=asia-northeast1 \
+            --schedule="0 1 * * *" \
+            --time-zone="Asia/Tokyo" \
+            --http-method=POST \
+            --uri=https://asia-northeast1-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/$PROJECT_ID/jobs/function-two:run \
+            --oauth-service-account-email=$SERVICE_ACCOUNT
+
+      # https://medium.com/@markwkiehl/google-cloud-run-jobs-scheduler-22a4e9252cf0

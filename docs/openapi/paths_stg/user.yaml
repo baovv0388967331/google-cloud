@@ -1,0 +1,68 @@
+post:
+  summary: ユーザートークン保存API
+  description: |
+    # ユーザートークン保存API
+    firestoreにユーザートークンを保存するAPIです。
+
+  tags:
+    - "ユーザー"
+  operationId: create-user-by-device-id
+  x-google-backend:
+    address: https://asia-northeast1-mynavi-jobsearch-stg-firebase.cloudfunctions.net/user
+  consumes:
+    - application/json
+  parameters:
+    - in: body
+      name: body
+      description: request Body
+      required: true
+      schema:
+        type: object
+        required:
+          - deviceId
+        properties:
+          userId:
+            type: string
+            example: "user-id"
+          deviceId:
+            type: string
+            minLength: 1
+            example: "device-id"
+          token:
+            type: string
+            example: "token"
+  security:
+    - jobsearch-stg-jwt-auth: []
+  responses:
+    "201":
+      description: Created
+      schema:
+        type: object
+        properties:
+          userId:
+            type: string
+            example: "404bd709-de23-4743-890a-afc6fde58f22"
+    "400":
+      description: not successful response (Api gateway on gcp cause this error)
+      schema:
+        $ref: "../openapi-stg.yaml#/definitions/Error400"
+    "401":
+      description: unauthenticated(Api gateway on gcp cause this error)
+      schema:
+        $ref: "../openapi-stg.yaml#/definitions/Error401"
+    "403":
+      description: permission denied (Api gateway on gcp cause this error)
+      schema:
+        $ref: "../openapi-stg.yaml#/definitions/Error403"
+    "409":
+      description: When user already exists in firebase, it responds this.
+      schema:
+        $ref: "../openapi-stg.yaml#/definitions/Error409AlreadyExist"
+    "422":
+      description: not correct params
+      schema:
+        $ref: "../openapi-stg.yaml#/definitions/Error422"
+    "500":
+      description: Internal severerror
+      schema:
+        $ref: "../openapi-stg.yaml#/definitions/Error500"

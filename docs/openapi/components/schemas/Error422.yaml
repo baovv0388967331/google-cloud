@@ -1,0 +1,5 @@
+type: object
+properties:
+  message:
+    type: string
+    example: validation error.  should have required property 'token'

@@ -1,0 +1,27 @@
+{
+  "name": "cloud-run",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "lint": "eslint --ext .js,.ts .",
+    "build": "tsc",
+    "start-cloud-run": "npm run build && node lib/index.js",
+    "start-scheduler": "npm run build && node lib/scheduler.js",
+    "deploy-cloud-run": "gcloud run deploy --source ."
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@google-cloud/functions-framework": "^3.4.2",
+    "@google-cloud/scheduler": "^4.3.0",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.1",
+    "firebase": "^11.0.1",
+    "firebase-admin": "^12.7.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.8.1"
+  }
+}
