@@ -1,0 +1,58 @@
+name: Deploy Express App to Cloud Run
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      id-token: write
+      pages: write
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }} #TODO
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+
+      - name: Build OpenAPI Documentation
+        run: |
+          docker run --rm -v ./docs:/docs jeanberu/swagger-cli swagger-cli bundle -t yaml -r /docs/openapi/openapi-stg.yaml -o /docs/openapi-to-deploy/openapi-to-deploy-stg.yaml
+
+      - name: "Authenticate to Google Cloud"
+        uses: google-github-actions/setup-gcloud@v1
+        with:
+          workload_identity_provider: https://iam.googleapis.com/projects/604131271753/locations/global/workloadIdentityPools/example-pool-id/providers/sdsad
+          service_account: "cloud-run-registry@fir-example-9ece3.iam.gserviceaccount.com"
+
+      - name: Configure Docker
+        run: |
+          gcloud auth configure-docker asia-northeast1-docker.pkg.dev
+
+      - name: Build and Push Docker Image
+        run: |
+          IMAGE="asia-northeast1-docker.pkg.dev/fir-example-9ece3/cloud-run-source-deploy/express:latest"
+          docker build -t $IMAGE .
+          docker push $IMAGE
+
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy express-app-service \
+            --image $IMAGE \
+            --platform managed \
+            --region asia-northeast1 \
+            --allow-unauthenticated \
+            --port 8080

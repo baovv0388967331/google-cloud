@@ -1,0 +1,177 @@
+swagger: '2.0'
+info:
+  title: cloud-run stg
+  description: cloud run stg example
+  version: 1.0.0
+schemes:
+  - https
+produces:
+  - application/json
+securityDefinitions:
+  jwt:
+    type: http
+    scheme: bearer
+    bearerFormat: JWT
+security:
+  - jwt: []
+definitions:
+  Error400:
+    type: object
+    properties:
+      message:
+        type: string
+        example: 'INVALID_ARGUMENT:API key not valid. Please pass a valid API key'
+      code:
+        type: number
+        example: 400
+  Error401:
+    type: object
+    properties:
+      message:
+        type: string
+        example: 'UNAUTHENTICATED:Method doesn''t allow unregistered callers (callers without established identity). Please use API Key or other form of API consumer identity to call this API.'
+      code:
+        type: number
+        example: 401
+  Error403:
+    type: object
+    properties:
+      message:
+        type: string
+        example: 'PERMISSION_DENIED:Client application blocked.'
+      code:
+        type: number
+        example: 403
+  Error404:
+    type: object
+    properties:
+      message:
+        type: string
+        example: NONT FOUND
+      code:
+        type: number
+        example: 404
+  Error409AlreadyExist:
+    type: object
+    properties:
+      message:
+        type: string
+        example: the docs already exists in firebase
+  Error409UserNotExist:
+    type: object
+    properties:
+      message:
+        type: string
+        example: the user doesn't exist in firebase
+  Error422:
+    type: object
+    properties:
+      message:
+        type: string
+        example: validation error.  should have required property 'token'
+  Error500:
+    type: object
+    properties:
+      message:
+        type: string
+paths:
+  /user:
+    post:
+      summary: ユーザートークン保存API
+      description: |
+        # ユーザートークン保存API
+        firestoreにユーザートークンを保存するAPIです。
+      tags:
+        - ユーザー
+      operationId: create-user-by-device-id
+      x-google-backend:
+        address: 'https://asia-northeast1-mynavi-jobsearch-stg-firebase.cloudfunctions.net/user'
+      consumes:
+        - application/json
+      parameters:
+        - in: body
+          name: body
+          description: request Body
+          required: true
+          schema:
+            type: object
+            required:
+              - deviceId
+            properties:
+              userId:
+                type: string
+                example: user-id
+              deviceId:
+                type: string
+                minLength: 1
+                example: device-id
+              token:
+                type: string
+                example: token
+      security:
+        - jobsearch-stg-jwt-auth: []
+      responses:
+        '201':
+          description: Created
+          schema:
+            type: object
+            properties:
+              userId:
+                type: string
+                example: 404bd709-de23-4743-890a-afc6fde58f22
+        '400':
+          description: not successful response (Api gateway on gcp cause this error)
+          schema:
+            type: object
+            properties:
+              message:
+                type: string
+                example: 'INVALID_ARGUMENT:API key not valid. Please pass a valid API key'
+              code:
+                type: number
+                example: 400
+        '401':
+          description: unauthenticated(Api gateway on gcp cause this error)
+          schema:
+            type: object
+            properties:
+              message:
+                type: string
+                example: 'UNAUTHENTICATED:Method doesn''t allow unregistered callers (callers without established identity). Please use API Key or other form of API consumer identity to call this API.'
+              code:
+                type: number
+                example: 401
+        '403':
+          description: permission denied (Api gateway on gcp cause this error)
+          schema:
+            type: object
+            properties:
+              message:
+                type: string
+                example: 'PERMISSION_DENIED:Client application blocked.'
+              code:
+                type: number
+                example: 403
+        '409':
+          description: 'When user already exists in firebase, it responds this.'
+          schema:
+            type: object
+            properties:
+              message:
+                type: string
+                example: the docs already exists in firebase
+        '422':
+          description: not correct params
+          schema:
+            type: object
+            properties:
+              message:
+                type: string
+                example: validation error.  should have required property 'token'
+        '500':
+          description: Internal severerror
+          schema:
+            type: object
+            properties:
+              message:
+                type: string
