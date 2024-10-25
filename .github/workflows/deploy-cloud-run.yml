@@ -1,0 +1,146 @@
+name: Deploy Express App to Cloud Run
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    name: Deploy to GCP
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    
+    env:
+      PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+      SERVICE_ACCOUNT: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+      IMAGE_NAME: example-app
+
+    permissions:
+      contents: read
+      id-token: write
+      pages: write
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+
+      - name: Build OpenAPI Documentation
+        run: |
+          docker run --rm -v ./docs:/docs jeanberu/swagger-cli swagger-cli bundle -t yaml -r /docs/openapi/openapi-stg.yaml -o /docs/openapi-to-deploy/openapi-to-deploy-stg.yaml
+
+      # - name: Authenticate to Google Cloud
+      #   uses: google-github-actions/setup-gcloud@v1
+      #   with:
+      #     workload_identity_provider: https://iam.googleapis.com/projects/604131271753/locations/global/workloadIdentityPools/example-pool-id/providers/sdsad
+      #     service_account: $SERVICE_ACCOUNT
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v1.1.1
+        with:
+          credentials_json: "${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}"
+
+      - name: Set Google Cloud account
+        run: gcloud config set account $SERVICE_ACCOUNT
+     
+      - name: Configure Docker
+        run: |
+          gcloud auth configure-docker asia-northeast1-docker.pkg.dev --quiet
+
+      - name: Set Account Permission
+        run: |
+          gcloud projects add-iam-policy-binding $PROJECT_ID \
+          --role roles/storage.admin \
+          --member serviceAccount:$SERVICE_ACCOUNT
+
+      - name: Build Docker Image
+        run: |
+          docker build --platform linux/amd64 -t $IMAGE_NAME:latest .
+
+      - name: Push Docker Image to Artifact Registry
+        run: |-
+          docker tag $IMAGE_NAME:latest asia-northeast1-docker.pkg.dev/$PROJECT_ID/images/$IMAGE_NAME:latest
+          docker tag $IMAGE_NAME:latest asia-northeast1-docker.pkg.dev/$PROJECT_ID/images/$IMAGE_NAME:$GITHUB_SHA
+          docker push asia-northeast1-docker.pkg.dev/$PROJECT_ID/images/$IMAGE_NAME:latest
+          docker push asia-northeast1-docker.pkg.dev/$PROJECT_ID/images/$IMAGE_NAME:$GITHUB_SHA
+
+      - name: Deploy To Cloud Run Job
+        run: |
+          gcloud beta run jobs create job1 \
+            --image $IMAGE_NAME:latest \
+            --region asia-northeast1 
+            --tasks=1 \
+            --task-timeout=1d \
+            --service-account=$SERVICE_ACCOUNT
+
+
+      - name: Create Cloud Scheduler for job1
+        run: |
+          TRIGGER_URL=$(gcloud beta run jobs describe job1 --region asia-northeast1 --format="value(status.uri)")
+          gcloud scheduler jobs create http job1-schedule \
+            --schedule="0 8 * * *" \
+            --uri="$TRIGGER_URL" \
+            --http-method=POST \
+            --oidc-service-account-email="github-actions-deployer@$PROJECT_ID.iam.gserviceaccount.com"
+
+        # gcloud run jobs create $IMAGE_NAME \
+        #   --image asia-northeast1-docker.pkg.dev/$PROJECT_ID/images/$IMAGE_NAME:latest \
+        #   --project $PROJECT_ID \
+        #   --region asia-northeast1 \
+        #   --format managed \
+        #   --max-retries=1 \
+        #   --task-timeout 18000s \
+        #   --service-account $SERVICE_ACCOUNT \
+        #   --port 8081 \
+        #   --quiet
+
+      # - name: Get Cloud Run URL
+      #   id: get_url
+      #   run: |
+      #     CLOUD_RUN_URL=$(gcloud run services describe $IMAGE_NAME \
+      #       --project $PROJECT_ID \
+      #       --region asia-northeast1 \
+      #       --format="value(status.url)")
+      #     echo "CLOUD_RUN_URL=$CLOUD_RUN_URL" >> $GITHUB_ENV
+
+      # - name: Delete Scheduler
+      #   run: |
+      #     gcloud scheduler jobs delete call-users-api --location=asia-northeast1 --quiet
+      #     gcloud scheduler jobs delete call-deleted-users-api --location=asia-northeast1 --quiet
+          
+      # - name: Set up Scheduler
+      #   run: |
+      #     EXISTS_CALL_USERS=$(gcloud scheduler jobs list --location=asia-northeast1 --format="value(name)" | grep call-users-api)
+         
+      #     if [ -z "$EXISTS_CALL_USERS" ]; then
+      #       gcloud scheduler jobs create http call-users-api \
+      #         --location=asia-northeast1 \
+      #         --schedule="*/5 * * * *" \
+      #         --time-zone="Asia/Tokyo" \
+      #         --http-method=POST \
+      #         --uri=$CLOUD_RUN_URL/users \
+      #         --oidc-service-account-email=$SERVICE_ACCOUNT \
+      #         --oidc-token-audience=$CLOUD_RUN_URL
+      #       echo "Job 'call-users-api' đã được tạo thành công."
+      #     fi
+          
+      #     EXISTS_CALL_DELETED_USERS=$(gcloud scheduler jobs list --location=asia-northeast1 --format="value(name)" | grep call-deleted-users-api)
+          
+      #     if [ -z "$EXISTS_CALL_DELETED_USERS" ]; then
+      #       gcloud scheduler jobs create http call-deleted-users-api \
+      #         --location=asia-northeast1 \
+      #         --schedule="0 * * * *" \
+      #         --time-zone="Asia/Tokyo" \
+      #         --http-method=POST \
+      #         --uri=$CLOUD_RUN_URL/deleted-users \
+      #         --oidc-service-account-email=$SERVICE_ACCOUNT \
+      #         --oidc-token-audience=$CLOUD_RUN_URL
+      #     fi
